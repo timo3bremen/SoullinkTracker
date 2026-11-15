@@ -1,6 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { POKEMON } from '../pokemonList';
+import { getNextEvolutions } from '../evolutions';
+import { slotOf, originalIdOf, originalNameOf } from '../soullinkRules';
 
-const LinkList = ({ links, onDeleteClick, isLoading, onToggleActive }) => {
+const PLAYERS = [
+  { key: 'player1', label: 'Spieler 1' },
+  { key: 'player2', label: 'Spieler 2' },
+  { key: 'player3', label: 'Spieler 3' }
+];
+
+const nameOf = (id) => POKEMON.find(p => p.id === id)?.name || `#${id}`;
+
+const LinkList = ({ links, onDeleteClick, isLoading, onToggleActive, onEvolve }) => {
+  // Offene Auswahl bei verzweigten Entwicklungen: { timestamp, key }
+  const [branchChoice, setBranchChoice] = useState(null);
+
   if (links.length === 0) {
     return (
       <div style={styles.emptyState}>
@@ -34,48 +48,89 @@ const LinkList = ({ links, onDeleteClick, isLoading, onToggleActive }) => {
 
             {/* Pokémon der Spieler */}
             <div style={styles.pokemonList}>
-              <div style={styles.pokemonRow}>
-                <span style={styles.playerLabel}>Spieler 1</span>
-                <img 
-                  src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${link.pokemon1?.id}.png`} 
-                  width={30} 
-                  height={30}
-                  alt={link.pokemon1?.name}
-                  style={styles.pokemonSprite}
-                />
-                <span style={styles.pokemonName}>
-                  {link.pokemon1?.name}
-                </span>
-              </div>
-              
-              <div style={styles.pokemonRow}>
-                <span style={styles.playerLabel}>Spieler 2</span>
-                <img 
-                  src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${link.pokemon2?.id}.png`} 
-                  width={30} 
-                  height={30}
-                  alt={link.pokemon2?.name}
-                  style={styles.pokemonSprite}
-                />
-                <span style={styles.pokemonName}>
-                  {link.pokemon2?.name}
-                </span>
-              </div>
-              
-              <div style={styles.pokemonRow}>
-                <span style={styles.playerLabel}>Spieler 3</span>
-                <img 
-                  src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${link.pokemon3?.id}.png`} 
-                  width={30} 
-                  height={30}
-                  alt={link.pokemon3?.name}
-                  style={styles.pokemonSprite}
-                />
-                <span style={styles.pokemonName}>
-                  {link.pokemon3?.name}
-                </span>
-              </div>
+              {PLAYERS.map(({ key, label }) => {
+                const p = link[slotOf(key)];
+                if (!p) return null;
+                const nextEvos = getNextEvolutions(p.id);
+                const evolved = originalIdOf(p) !== p.id;
+                const choosing = branchChoice?.timestamp === link.timestamp && branchChoice?.key === key;
+
+                const handleEvolve = () => {
+                  if (nextEvos.length === 1) {
+                    onEvolve(link, key, nextEvos[0]);
+                  } else {
+                    setBranchChoice(choosing ? null : { timestamp: link.timestamp, key });
+                  }
+                };
+
+                return (
+                  <div key={key}>
+                    <div style={styles.pokemonRow}>
+                      <span style={styles.playerLabel}>{label}</span>
+                      <img 
+                        src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`} 
+                        width={30} 
+                        height={30}
+                        alt={p.name}
+                        style={styles.pokemonSprite}
+                      />
+                      <div style={styles.nameBlock}>
+                        <span style={styles.pokemonName}>{p.name}</span>
+                        {evolved && (
+                          <span style={styles.originalName}>Gefangen als {originalNameOf(p)}</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleEvolve}
+                        disabled={isLoading || nextEvos.length === 0}
+                        style={{
+                          ...styles.evolveButton,
+                          ...(nextEvos.length === 0 ? styles.evolveButtonDisabled : {})
+                        }}
+                        title={nextEvos.length === 0
+                          ? 'Keine weitere Entwicklung'
+                          : `Entwickeln zu ${nextEvos.map(nameOf).join(' / ')}`}
+                      >
+                        Entwicklung
+                      </button>
+                    </div>
+
+                    {/* Auswahl bei verzweigten Entwicklungen (z.B. Evoli) */}
+                    {choosing && (
+                      <div style={styles.branchChoice}>
+                        {nextEvos.map((id) => (
+                          <button
+                            key={id}
+                            style={styles.branchButton}
+                            disabled={isLoading}
+                            onClick={() => {
+                              setBranchChoice(null);
+                              onEvolve(link, key, id);
+                            }}
+                          >
+                            <img
+                              src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
+                              width={24}
+                              height={24}
+                              alt={nameOf(id)}
+                              style={styles.pokemonSprite}
+                            />
+                            {nameOf(id)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+
+            {/* Original-Link (wie gefangen) */}
+            {PLAYERS.some(({ key }) => link[slotOf(key)] && originalIdOf(link[slotOf(key)]) !== link[slotOf(key)].id) && (
+              <div style={styles.originalLink}>
+                Original-Link: {PLAYERS.map(({ key }) => link[slotOf(key)] ? originalNameOf(link[slotOf(key)]) : '–').join(', ')}
+              </div>
+            )}
 
             {/* Route und Löschen */}
             <div style={styles.footer}>
@@ -135,6 +190,7 @@ const styles = {
     zIndex: 2
   },
   pokemonList: {
+    marginTop: '30px',
     marginBottom: '15px'
   },
   pokemonRow: {
@@ -158,6 +214,60 @@ const styles = {
   pokemonName: {
     color: '#333',
     fontSize: '13px'
+  },
+  nameBlock: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    textAlign: 'left'
+  },
+  originalName: {
+    fontSize: '10px',
+    color: '#888',
+    fontStyle: 'italic'
+  },
+  evolveButton: {
+    backgroundColor: '#7E57C2',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    padding: '4px 8px',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    cursor: 'pointer'
+  },
+  evolveButtonDisabled: {
+    backgroundColor: '#cccccc',
+    color: '#888',
+    cursor: 'not-allowed'
+  },
+  branchChoice: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+    margin: '-4px 0 8px 0',
+    padding: '6px',
+    backgroundColor: '#ede7f6',
+    borderRadius: '4px'
+  },
+  branchButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    backgroundColor: 'white',
+    border: '1px solid #7E57C2',
+    borderRadius: '4px',
+    padding: '2px 6px',
+    fontSize: '11px',
+    cursor: 'pointer'
+  },
+  originalLink: {
+    fontSize: '11px',
+    color: '#666',
+    backgroundColor: '#fafafa',
+    border: '1px dashed #ddd',
+    borderRadius: '4px',
+    padding: '5px 8px'
   },
   footer: {
     display: 'flex',

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { POKEMON } from "../pokemonList";
 import Select from 'react-select';
 
@@ -10,17 +10,22 @@ const pokemonOptions = POKEMON.map(p => ({
   image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${p.id}.png`
 }));
 
-// Benutzerdefinierte Formatierung für die Optionen
-const formatOptionLabel = ({ value, label, image }) => (
+// Benutzerdefinierte Formatierung für die Optionen (mit Warnhinweis)
+const formatOptionLabel = ({ label, image, warnings }, { context }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
     <img 
       src={image} 
       alt={label} 
       width={30} 
       height={30}
-      style={{ imageRendering: 'pixelated' }}
+      style={{ imageRendering: 'pixelated', opacity: warnings?.length ? 0.6 : 1 }}
     />
-    <span>{label}</span>
+    <div style={{ textAlign: 'left' }}>
+      <span>{warnings?.length ? '⚠️ ' : ''}{label}</span>
+      {context === 'menu' && warnings?.length > 0 && (
+        <div style={{ fontSize: '11px', color: '#e65100' }}>{warnings[0]}</div>
+      )}
+    </div>
   </div>
 );
 
@@ -31,8 +36,16 @@ export default function PlayerBox({
   onSelect, 
   onRemove,
   onEdit,
-  onLevelChange 
+  onLevelChange,
+  getWarnings = () => []
 }) {
+  // Optionen inkl. Warnungen (verbrauchte Pokémon / eigene Entwicklungslinie)
+  const optionsWithWarnings = useMemo(
+    () => pokemonOptions.map(o => ({ ...o, warnings: getWarnings(o.value) })),
+    [getWarnings]
+  );
+  const selectedWarnings = selected ? getWarnings(selected.id) : [];
+
   const currentValue = selected ? {
     value: selected.id,
     label: `#${selected.id.toString().padStart(3, '0')} - ${selected.name}`,
@@ -96,7 +109,7 @@ export default function PlayerBox({
           Neues Pokémon für Link:
         </h3>
         <Select
-          options={pokemonOptions}
+          options={optionsWithWarnings}
           value={currentValue}
           onChange={(option) => {
             if (option && onSelect) {
@@ -141,9 +154,11 @@ export default function PlayerBox({
                 background: '#555',
               },
             }),
-            option: (base, { isFocused, isSelected }) => ({
+            option: (base, { isFocused, isSelected, data }) => ({
               ...base,
-              backgroundColor: isSelected ? '#4CAF50' : isFocused ? '#f0f0f0' : 'white',
+              backgroundColor: isSelected ? '#4CAF50'
+                : data.warnings?.length ? (isFocused ? '#ffe0b2' : '#fff3e0')
+                : isFocused ? '#f0f0f0' : 'white',
               color: isSelected ? 'white' : 'black',
               cursor: 'pointer',
               padding: '8px 12px',
@@ -169,6 +184,15 @@ export default function PlayerBox({
             <div style={styles.selectedName}>
               #{selected.id.toString().padStart(3, '0')} - {selected.name} ausgewählt
             </div>
+          </div>
+        )}
+
+        {selectedWarnings.length > 0 && (
+          <div style={styles.warningBox}>
+            <strong>⚠️ Achtung – Pokémon bereits verbraucht:</strong>
+            <ul style={styles.warningList}>
+              {selectedWarnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
           </div>
         )}
       </div>
@@ -295,6 +319,20 @@ const styles = {
   selectedName: {
     fontWeight: "bold",
     color: "#4CAF50"
+  },
+  warningBox: {
+    marginTop: "10px",
+    padding: "10px",
+    backgroundColor: "#fff3e0",
+    border: "1px solid #ff9800",
+    borderRadius: "8px",
+    color: "#e65100",
+    fontSize: "13px",
+    textAlign: "left"
+  },
+  warningList: {
+    margin: "6px 0 0 0",
+    paddingLeft: "18px"
   },
   infoButton: {
     backgroundColor: "#2196F3",  // Blau

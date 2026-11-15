@@ -24,8 +24,12 @@ export default function EditPokemonModal({ isOpen, onClose, pokemon, onSave }) {
     const newPokemon = POKEMON.find(p => p.id === parseInt(selectedPokemon));
     if (newPokemon) {
       onSave({
+        ...pokemon,
         id: newPokemon.id,
-        name: newPokemon.name
+        name: newPokemon.name,
+        // Original (gefangenes) Pokémon beibehalten
+        originalId: pokemon.originalId ?? pokemon.id,
+        originalName: pokemon.originalName || pokemon.name
       });
     }
   };

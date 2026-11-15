@@ -7,6 +7,8 @@ import LevelCapDisplay from './components/LevelCapDisplay';
 import RouteList from "./components/RouteList";
 import TypeChart from "./components/TypeChart";
 import TeamHeader from './components/TeamHeader';
+import { POKEMON } from "./pokemonList";
+import { getPokemonWarnings, PLAYER_NAMES, slotOf } from "./soullinkRules";
 
 function App() {
   
@@ -316,43 +318,36 @@ const [resetConfirmText, setResetConfirmText] = useState("");
     return;
   }
 
-  // Wichtig: originalName beim Erstellen setzen!
+  // Regelverstöße prüfen und ggf. bestätigen lassen
+  const allWarnings = Object.keys(PLAYER_NAMES).flatMap((key) =>
+    getPokemonWarnings(team, currentSelection, key, currentSelection[key].id)
+      .map((w) => `${PLAYER_NAMES[key]} – ${currentSelection[key].name}: ${w}`)
+  );
+  if (allWarnings.length > 0 &&
+      !window.confirm(`⚠️ Achtung:\n\n${allWarnings.join("\n")}\n\nTrotzdem hinzufügen?`)) {
+    return;
+  }
+
+  // Original (gefangenes) Pokémon merken – bleibt bei Entwicklungen erhalten
+  const withOriginal = (p) => ({ id: p.id, name: p.name, originalId: p.id, originalName: p.name });
+
   const newLink = {
     fromPlayer: "player1",
     toPlayer: "player2",
     type: "Soullink",
-    pokemon1: { 
-      ...currentSelection.player1, 
-      originalName: currentSelection.player1.name  // Hier wird originalName gesetzt
-    },
-    pokemon2: { 
-      ...currentSelection.player2, 
-      originalName: currentSelection.player2.name  // Hier wird originalName gesetzt
-    },
-    pokemon3: { 
-      ...currentSelection.player3, 
-      originalName: currentSelection.player3.name  // Hier wird originalName gesetzt
-    },
+    pokemon1: withOriginal(currentSelection.player1),
+    pokemon2: withOriginal(currentSelection.player2),
+    pokemon3: withOriginal(currentSelection.player3),
     timestamp: new Date().toISOString(),
     route: currentRoute,
     active: false
   };
 
-  // Auch beim Hinzufügen zu den Spieler-Teams originalName setzen
   const updatedTeam = {
     ...team,
-    player1: [...team.player1, { 
-      ...currentSelection.player1, 
-      originalName: currentSelection.player1.name 
-    }],
-    player2: [...team.player2, { 
-      ...currentSelection.player2, 
-      originalName: currentSelection.player2.name 
-    }],
-    player3: [...team.player3, { 
-      ...currentSelection.player3, 
-      originalName: currentSelection.player3.name 
-    }],
+    player1: [...team.player1, withOriginal(currentSelection.player1)],
+    player2: [...team.player2, withOriginal(currentSelection.player2)],
+    player3: [...team.player3, withOriginal(currentSelection.player3)],
     links: [...team.links, newLink]
   };
 
@@ -360,6 +355,40 @@ const [resetConfirmText, setResetConfirmText] = useState("");
   setCurrentSelection({ player1: null, player2: null, player3: null });
   setCurrentRoute("");
 }, [team, currentSelection, currentRoute, saveTeam]);
+
+  // Warnungen für die Auswahl-Selects
+  const getWarnings = useCallback(
+    (playerKey, pokemonId) => getPokemonWarnings(team, currentSelection, playerKey, pokemonId),
+    [team, currentSelection]
+  );
+
+  // Pokémon in einem Link (und im Team des Spielers) eine Stufe weiterentwickeln
+  const evolvePokemon = useCallback(async (linkToEvolve, playerKey, newId) => {
+    const slot = slotOf(playerKey);
+    const oldPokemon = linkToEvolve[slot];
+    const target = POKEMON.find((p) => p.id === newId);
+    if (!oldPokemon || !target) return;
+
+    const evolved = {
+      ...oldPokemon,
+      id: target.id,
+      name: target.name,
+      originalId: oldPokemon.originalId ?? oldPokemon.id,
+      originalName: oldPokemon.originalName || oldPokemon.name
+    };
+
+    const updatedLinks = team.links.map((link) =>
+      link.timestamp === linkToEvolve.timestamp ? { ...link, [slot]: evolved } : link
+    );
+
+    const playerList = [...(team[playerKey] || [])];
+    const teamIndex = playerList.findIndex((p) => p.id === oldPokemon.id);
+    if (teamIndex !== -1) playerList[teamIndex] = evolved;
+
+    setIsLoading(true);
+    await saveTeam({ ...team, links: updatedLinks, [playerKey]: playerList });
+    setIsLoading(false);
+  }, [team, saveTeam]);
 
   const handleDeleteClick = (link) => {
     setLinkToDelete(link);
@@ -456,6 +485,7 @@ const [resetConfirmText, setResetConfirmText] = useState("");
               teamPokemon={team.player1}
               selected={currentSelection.player1}
               onSelect={(p) => handleSelectPokemon("player1", p)}
+              getWarnings={(id) => getWarnings("player1", id)}
               onEdit={(index, pokemon) => handleEditPokemon("player1", index, pokemon)}
             />
             <PlayerBox 
@@ -463,6 +493,7 @@ const [resetConfirmText, setResetConfirmText] = useState("");
               teamPokemon={team.player2}
               selected={currentSelection.player2}
               onSelect={(p) => handleSelectPokemon("player2", p)}
+              getWarnings={(id) => getWarnings("player2", id)}
               onEdit={(index, pokemon) => handleEditPokemon("player2", index, pokemon)}
             />
             <PlayerBox 
@@ -470,6 +501,7 @@ const [resetConfirmText, setResetConfirmText] = useState("");
               teamPokemon={team.player3}
               selected={currentSelection.player3}
               onSelect={(p) => handleSelectPokemon("player3", p)}
+              getWarnings={(id) => getWarnings("player3", id)}
               onEdit={(index, pokemon) => handleEditPokemon("player3", index, pokemon)}
             />
           </div>
@@ -545,6 +577,7 @@ const [resetConfirmText, setResetConfirmText] = useState("");
             links={team.links} 
             onDeleteClick={handleDeleteClick}
             onToggleActive={toggleLinkActive}
+            onEvolve={evolvePokemon}
             isLoading={isLoading}
           />
         </>
